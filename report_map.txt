@@ -1,0 +1,143 @@
+Guitar Hero 5 / Band Hero PS3 Wireless Receiver
+HID Report Map (USB side)
+==============================================
+
+Device
+------
+VID:PID     = 12BA:0100
+USB         = Full Speed
+HID         = 1.10
+IN  EP      = 0x81 Interrupt, 64 byte max, ~10 ms
+OUT EP      = 0x02 Interrupt, 64 byte max, ~10 ms
+Observed report length from hidapi read = 27 bytes
+Board       = GH5_PS3_ON / GH5_PS3_DN VER: C
+RF module   = RSF-201-2-2 (chip under epoxy blob; not nRF52840)
+FCC         = VFI95893806  (model 95893.806)
+Crystal     = 12.000 MHz
+
+Captured with: gh_test.py / gh_tilt_test.py
+Source logs:   captures (manual labels) + tilt_capture.txt
+
+
+Idle (BOŞ) example
+------------------
+00 00 0F 80 80 80 80 00 00 00 00 00 00 00 00 00 00 00 00 00 02 80 01 00 02 00 02
+
+Index: 0  1  2  3  4  5  6  7  8  9 10 11 12 ... 19 20 21 22 23 24 25 26
+
+
+Byte 0 — Frets (bitmask)
+------------------------
+Bit 0 (0x01) = Yellow
+Bit 1 (0x02) = Green
+Bit 2 (0x04) = Red
+Bit 3 (0x08) = Blue
+Bit 4 (0x10) = Orange
+
+Examples:
+  GREEN+RED           = 0x06
+  GREEN+YELLOW        = 0x03
+  RED+YELLOW          = 0x05
+  GREEN+RED+YELLOW    = 0x07
+  ALL_FRETS           = 0x1F
+
+
+Byte 1 — System buttons
+-----------------------
+0x01 = Select
+0x02 = Start
+0x10 = PS button
+
+
+Byte 2 — Hat / D-Pad / Strum
+----------------------------
+0x0F = Center / idle (no strum, no d-pad)
+0x00 = Strum Up
+0x04 = Strum Down
+0x06 = D-Pad Left
+0x02 = D-Pad Right
+
+Related secondary bytes (often set with hat):
+  Strum Up    -> byte 9  = 0x80
+  Strum Down  -> byte 10 = 0x80
+  D-Pad Left  -> byte 8  = 0xFF
+  D-Pad Right -> byte 7  = 0xFF
+
+
+Bytes 3–6 — Analog axes (center = 0x80)
+--------------------------------------
+Byte 3 = 0x80 idle (unused in our captures)
+Byte 4 = 0x80 idle (unused in our captures)
+Byte 5 = Whammy
+          min / rest = 0x80
+          max        = 0xFF
+Byte 6 = 0x80 idle
+          (saw 0xFF once with ALL_FRETS; not confirmed as tilt)
+
+
+Byte 19 — Tilt (from continuous tilt_capture.txt)
+-------------------------------------------------
+Bytes 3–6 did NOT change during tilt tests.
+
+Tilt shows up mainly on byte 19 (with byte 20 as companion):
+
+  Flat / idle (noisy):  byte19 = 0x00 <-> 0xFE/0xFF
+                        byte20 = 0x02  /  0x01
+
+  Tilting up:           byte19 decreases smoothly
+                        e.g. FF -> E0 -> D0 -> A4 ...
+                        byte20 mostly 0x01
+
+  Returning flat:       byte19 increases back toward FF
+                        then idle noise pattern returns
+
+Practical game threshold (tune as needed):
+  treat as tilted when byte19 is in a "settled" mid/low
+  range (e.g. < 0xC0) and not just the idle 00/FE/FF flicker.
+  May need debounce / require smooth change.
+
+
+Bytes 11–12, and other mid-report FF values
+-------------------------------------------
+Often appear with fret presses — likely GH5 touch slider /
+contact noise. Do NOT use for fret detection; use byte 0.
+
+
+Bytes 20–26 — Trailer / status
+------------------------------
+Common ending:
+  ... 02 80 01 00 02 00 02
+
+Byte20 often 0x01 or 0x02 together with byte19 patterns.
+Treat as device status unless proven otherwise.
+
+
+OUT endpoint
+------------
+Present but not yet reverse-engineered.
+Likely used for sync / LED / host keep-alive.
+TODO: capture host->device traffic (USBPcap / Wireshark).
+
+
+Emulator checklist (Pico USB HID later)
+---------------------------------------
+[ ] Emulate VID:PID 12BA:0100 (if host requires it)
+[ ] Send 27-byte (or padded 64-byte) reports at ~10 ms
+[ ] Map inputs:
+      report[0] frets
+      report[1] start/select/ps
+      report[2] hat
+      report[5] whammy
+      report[19] tilt
+[ ] Keep unused analogs at 0x80
+[ ] Keep plausible trailer bytes
+[ ] Study OUT packets before claiming full dongle clone
+
+
+Notes
+-----
+- Dongles are NOT interchangeable across GH generations.
+- This map is USB HID only. Guitar <-> dongle RF is separate
+  (RSF-201 module); replacement dongle still needs RF RE.
+- First GREEN+YELLOW labeled 0x05 was a mis-press (that is R+Y).
+- Second DPAD_RIGHT capture that stayed 0x0F was not pressed.
